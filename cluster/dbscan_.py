@@ -106,10 +106,14 @@ def dbscan(X, eps=0.5, min_samples=5, metric='minkowski',
     if not eps > 0.0:
         raise ValueError("eps must be positive.")
 
-    X = check_array(X, accept_sparse='csr')
+    #unneccessary recheck of array --sklearn-large
+
+    #X = check_array(X, accept_sparse='csr')
     if sample_weight is not None:
         sample_weight = np.asarray(sample_weight)
         check_consistent_length(X, sample_weight)
+
+    print("Initial Checks successful ...")
 
     # Calculate neighborhood for all samples. This leaves the original point
     # in, which needs to be considered later (i.e. point i is in the
@@ -128,6 +132,7 @@ def dbscan(X, eps=0.5, min_samples=5, metric='minkowski',
         # split into rows
         neighborhoods[:] = np.split(masked_indices, masked_indptr)
     else:
+        #Optimisation neccessary -- sklearn_large
         neighbors_model = NearestNeighbors(radius=eps, algorithm=algorithm,
                                            leaf_size=leaf_size,
                                            metric=metric, p=p,
@@ -262,6 +267,8 @@ class DBSCAN(BaseEstimator, ClusterMixin):
             Note that weights are absolute, and default to 1.
         """
         X = check_array(X, accept_sparse='csr')
+        print("Input Array validated ...")
+
         clust = dbscan(X, sample_weight=sample_weight,
                        **self.get_params())
         self.core_sample_indices_, self.labels_ = clust

@@ -116,6 +116,7 @@ class NearestNeighbors(NeighborsBase, KNeighborsMixin,
     def __init__(self, n_neighbors=5, radius=1.0,
                  algorithm='auto', leaf_size=30, metric='minkowski',
                  p=2, metric_params=None, n_jobs=1, **kwargs):
+        #not overrided n_neighbors parameter -- sklearn_large
         self._init_params(n_neighbors=n_neighbors,
                           radius=radius,
                           algorithm=algorithm,

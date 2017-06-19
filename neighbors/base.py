@@ -110,7 +110,7 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
                      algorithm='auto', leaf_size=30, metric='minkowski',
                      p=2, metric_params=None, n_jobs=1):
 
-        self.n_neighbors = n_neighbors
+        self.n_neighbors = n_neighbors #sklearn_large ignores -- n_neighbors=5
         self.radius = radius
         self.algorithm = algorithm
         self.leaf_size = leaf_size
@@ -123,6 +123,7 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
                              'kd_tree', 'ball_tree']:
             raise ValueError("unrecognized algorithm: '%s'" % algorithm)
 
+        # ------- Note: alg_check and effective_p lost in this function -- not carried forward --------
         if algorithm == 'auto':
             if metric == 'precomputed':
                 alg_check = 'brute'

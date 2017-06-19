@@ -21,6 +21,7 @@ from ..exceptions import DataConversionWarning as _DataConversionWarning
 from ..exceptions import NonBLASDotWarning as _NonBLASDotWarning
 from ..exceptions import NotFittedError as _NotFittedError
 
+import h5py
 
 @deprecated("DataConversionWarning has been moved into the sklearn.exceptions"
             " module. It will not be available here from version 0.19")
@@ -47,15 +48,31 @@ warnings.simplefilter('ignore', _NonBLASDotWarning)
 
 
 def _assert_all_finite(X):
-    """Like assert_all_finite, but only for ndarray."""
-    X = np.asanyarray(X)
-    # First try an O(n) time, O(1) space solution for the common case that
-    # everything is finite; fall back to O(n) space np.isfinite to prevent
-    # false positives from overflow in sum method.
-    if (X.dtype.char in np.typecodes['AllFloat'] and not np.isfinite(X.sum())
-            and not np.isfinite(X).all()):
-        raise ValueError("Input contains NaN, infinity"
-                         " or a value too large for %r." % X.dtype)
+    """Like assert_all_finite, but only for ndarray. -- sklearn_large"""
+    
+    try:
+        X = np.asanyarray(X) #raises Memory Error here -- for large HDF5 datasets
+
+        # First try an O(n) time, O(1) space solution for the common case that
+        # everything is finite; fall back to O(n) space np.isfinite to prevent
+        # false positives from overflow in sum method.
+        if (X.dtype.char in np.typecodes['AllFloat'] and not np.isfinite(X.sum())
+                and not np.isfinite(X).all()):
+
+            raise ValueError("Input contains NaN, infinity"
+                             " or a value too large for %r." % X.dtype)
+
+    #sklearn-large
+    except MemoryError:
+
+        if (X.dtype.char in np.typecodes['AllFloat']):
+            for x in X:
+                isfinite_sum = np.isfinite(x.sum())
+                isfinite_all = np.isfinite(x).all()  
+
+                if not(isfinite_sum and isfinite_all):
+                    raise ValueError("Input contains NaN, infinity"
+                                "or a value too large for %r." % X.dtype)
 
 
 def assert_all_finite(X):
@@ -114,6 +131,8 @@ def _num_samples(x):
         # Don't get num_samples from an ensembles length!
         raise TypeError('Expected sequence or array-like, got '
                         'estimator %s' % x)
+
+    #h5py datasets have __len__ and shape -- sklearn-large
     if not hasattr(x, '__len__') and not hasattr(x, 'shape'):
         if hasattr(x, '__array__'):
             x = np.asarray(x)
@@ -345,8 +364,8 @@ def check_array(array, accept_sparse=None, dtype="numeric", order=None,
     # store whether originally we wanted numeric dtype
     dtype_numeric = dtype == "numeric"
 
-    dtype_orig = getattr(array, "dtype", None)
-    if not hasattr(dtype_orig, 'kind'):
+    dtype_orig = getattr(array, "dtype", None) #returns : dtype('float64')
+    if not hasattr(dtype_orig, 'kind'): #HDF5 datasets have 'dtype.kind'
         # not a data type (e.g. a column named dtype in a pandas DataFrame)
         dtype_orig = None
 
@@ -360,7 +379,7 @@ def check_array(array, accept_sparse=None, dtype="numeric", order=None,
     if isinstance(dtype, (list, tuple)):
         if dtype_orig is not None and dtype_orig in dtype:
             # no dtype conversion required
-            dtype = None
+            dtype = None # dtype=None supported by numpy
         else:
             # dtype conversion required. Let's select the first element of the
             # list of accepted types.
@@ -375,31 +394,37 @@ def check_array(array, accept_sparse=None, dtype="numeric", order=None,
         estimator_name = "Estimator"
     context = " by %s" % estimator_name if estimator is not None else ""
 
-    if sp.issparse(array):
+    if sp.issparse(array): #works for h5py datasets
         array = _ensure_sparse_format(array, accept_sparse, dtype, copy,
                                       force_all_finite)
     else:
-        array = np.array(array, dtype=dtype, order=order, copy=copy)
+        #ignores order
+        if copy:
+            f = h5py.File("HOOD/sklearn_check_copy.hdf5","w")
+            array = f.create_dataset("array",data=array,dtype=dtype)
+        #array = np.array(array, dtype=dtype, order=order, copy=copy)
 
         if ensure_2d:
             if array.ndim == 1:
-                if ensure_min_samples >= 2:
-                    raise ValueError("%s expects at least 2 samples provided "
-                                     "in a 2 dimensional array-like input"
-                                     % estimator_name)
-                warnings.warn(
+                raise ValueError("%s expects at least 2 samples provided "
+                                 "in a 2 dimensional array-like input"
+                                 % estimator_name)
+                '''warnings.warn(
                     "Passing 1d arrays as data is deprecated in 0.17 and will "
                     "raise ValueError in 0.19. Reshape your data either using "
                     "X.reshape(-1, 1) if your data has a single feature or "
                     "X.reshape(1, -1) if it contains a single sample.",
-                    DeprecationWarning)
-            array = np.atleast_2d(array)
+                    DeprecationWarning)'''
+
+            #atleast_2d and cast un-neccessary: except for 1D array -- sklearn_large
+            #array = np.atleast_2d(array)
             # To ensure that array flags are maintained
-            array = np.array(array, dtype=dtype, order=order, copy=copy)
+            #array = np.array(array, dtype=dtype, order=order, copy=copy)
 
         # make sure we actually converted to numeric:
+        #Note : HDF5 files don't support 'O' datatype
         if dtype_numeric and array.dtype.kind == "O":
-            array = array.astype(np.float64)
+            array = array.astype(np.float64) # array is not a h5py dataset
         if not allow_nd and array.ndim >= 3:
             raise ValueError("Found array with dim %d. %s expected <= 2."
                              % (array.ndim, estimator_name))
