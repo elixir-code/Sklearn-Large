@@ -25,6 +25,10 @@ from ..externals.joblib import Parallel, delayed
 from ..exceptions import NotFittedError
 from ..exceptions import DataConversionWarning
 
+#trying optimisations for sklearn_large
+import gc
+gc.set_threshold(100)
+
 VALID_METRICS = dict(ball_tree=BallTree.valid_metrics,
                      kd_tree=KDTree.valid_metrics,
                      # The following list comes from the
@@ -201,7 +205,7 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
             self._fit_method = 'kd_tree'
             return self
 
-        X = check_array(X, accept_sparse='csr')
+        #X = check_array(X, accept_sparse='csr')
 
         n_samples = X.shape[0]
         if n_samples == 0:
@@ -220,7 +224,7 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
             return self
 
         self._fit_method = self.algorithm
-        self._fit_X = X
+        self._fit_X = X # self._fit_X = instance of hdf5 dataset (distance matrix)
 
         if self._fit_method == 'auto':
             # A tree approach is better for small number of neighbors,
@@ -243,7 +247,7 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
             self._tree = KDTree(X, self.leaf_size,
                                 metric=self.effective_metric_,
                                 **self.effective_metric_params_)
-        elif self._fit_method == 'brute':
+        elif self._fit_method == 'brute': #sklearn_large -- path
             self._tree = None
         else:
             raise ValueError("algorithm = '%s' not recognized"
@@ -571,7 +575,8 @@ class RadiusNeighborsMixin(object):
 
         if X is not None:
             query_is_train = False
-            X = check_array(X, accept_sparse='csr')
+            #commented check_array for sklearn_large -- recomputing check_array
+            #X = check_array(X, accept_sparse='csr')
         else:
             query_is_train = True
             X = self._fit_X
@@ -580,24 +585,51 @@ class RadiusNeighborsMixin(object):
             radius = self.radius
 
         n_samples = X.shape[0]
+
+        #sklearn_large self._fit_method is 'brute'
         if self._fit_method == 'brute':
             # for efficiency, use squared euclidean distances
             if self.effective_metric_ == 'euclidean':
                 dist = pairwise_distances(X, self._fit_X, 'euclidean',
                                           n_jobs=self.n_jobs, squared=True)
                 radius *= radius
+
+            #special case added for sklearn_large : Model was fitted with distance matrix
+            elif self.effective_metric_ == 'precomputed':
+                dist = self._fit_X
+
             else:
                 dist = pairwise_distances(X, self._fit_X,
                                           self.effective_metric_,
                                           n_jobs=self.n_jobs,
                                           **self.effective_metric_params_)
 
-            neigh_ind_list = [np.where(d <= radius)[0] for d in dist]
+            
+
+            try:
+                #print("Neighbours list generation initialised ...")
+                #neigh_ind_list = [np.where(d <= radius)[0] for d in dist]
+                #for improved feedback
+                neigh_ind_list = np.empty(n_samples,dtype='object')
+                print("created object neigh_ind_list ...")
+
+                gc.collect()
+                
+                for ind,d in enumerate(dist):
+                    print(ind)
+                    neigh_ind_list[ind] = np.where(d <= radius)[0]
+                print("Neighbours list successfully generated ...")
+                    
+            except Exception:
+                print("Potential Memory Hazard turned Disaster. Please refer to radius_neighbors module ...")
 
             # See https://github.com/numpy/numpy/issues/5456
             # if you want to understand why this is initialized this way.
             neigh_ind = np.empty(n_samples, dtype='object')
             neigh_ind[:] = neigh_ind_list
+
+            #why preserve neigh_ind_list -- sklearn_large
+            del neigh_ind_list
 
             if return_distance:
                 dist_array = np.empty(n_samples, dtype='object')
@@ -609,8 +641,12 @@ class RadiusNeighborsMixin(object):
                                  for i, d in enumerate(dist)]
                 dist_array[:] = dist_list
 
+                #why preserve dist_list -- sklearn
+                del dist_list
+
                 results = dist_array, neigh_ind
             else:
+                #this part for dbscan --sklearn_large
                 results = neigh_ind
 
         elif self._fit_method in ['ball_tree', 'kd_tree']:
@@ -621,6 +657,8 @@ class RadiusNeighborsMixin(object):
             results = self._tree.query_radius(X, radius,
                                               return_distance=return_distance)
             if return_distance:
+                #reversing the array results - query_radius returns neigh_ind, dist
+                #expected dist, neigh_ind
                 results = results[::-1]
         else:
             raise ValueError("internal: _fit_method not recognized")

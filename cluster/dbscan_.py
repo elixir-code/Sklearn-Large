@@ -138,7 +138,8 @@ def dbscan(X, eps=0.5, min_samples=5, metric='minkowski',
                                            metric=metric, p=p,
                                            n_jobs=n_jobs)
         neighbors_model.fit(X)
-        # This has worst case O(n^2) memory complexity
+        print("Neighbors model fitted successfully ...")
+        # This has worst case O(n^2) memory complexity -- O (n.d) complexity for radius_neighbors query
         neighborhoods = neighbors_model.radius_neighbors(X, eps,
                                                          return_distance=False)
 
@@ -154,7 +155,12 @@ def dbscan(X, eps=0.5, min_samples=5, metric='minkowski',
 
     # A list of all core samples found.
     core_samples = np.asarray(n_neighbors >= min_samples, dtype=np.uint8)
+
+    print("Initialising dbscan CPython code ...")
+    #sklearn_large -- No control over dbscan inner (less chance of memory error)
     dbscan_inner(core_samples, neighborhoods, labels)
+    print("DBSCAN inner successful ...")
+
     return np.where(core_samples)[0], labels
 
 
@@ -266,19 +272,24 @@ class DBSCAN(BaseEstimator, ClusterMixin):
             weight may inhibit its eps-neighbor from being core.
             Note that weights are absolute, and default to 1.
         """
-        X = check_array(X, accept_sparse='csr')
+        #Just Debugging -- uncomment check_array later
+        #X = check_array(X, accept_sparse='csr')
         print("Input Array validated ...")
 
         clust = dbscan(X, sample_weight=sample_weight,
                        **self.get_params())
         self.core_sample_indices_, self.labels_ = clust
+
+        '''
+        #not meaningful when metric='precomputed' -- X = distance_matrix
         if len(self.core_sample_indices_):
-            # fix for scipy sparse indexing issue
+            # fix for scipy sparse indexing issue : potential Memory Error in generating self.components_
             self.components_ = X[self.core_sample_indices_].copy()
         else:
             # no core samples
             self.components_ = np.empty((0, X.shape[1]))
-        return self
+        '''
+        return self                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
 
     def fit_predict(self, X, y=None, sample_weight=None):
         """Performs clustering on X and returns cluster labels.

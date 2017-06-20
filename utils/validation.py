@@ -399,9 +399,13 @@ def check_array(array, accept_sparse=None, dtype="numeric", order=None,
                                       force_all_finite)
     else:
         #ignores order
-        if copy:
-            f = h5py.File("HOOD/sklearn_check_copy.hdf5","w")
-            array = f.create_dataset("array",data=array,dtype=dtype)
+        try:
+            array = np.array(array, dtype=dtype, order=order, copy=copy)
+
+        except MemoryError:
+            if copy:
+                f = h5py.File("HOOD/sklearn_check_copy.hdf5","w")
+                array = f.create_dataset("array",data=array,dtype=dtype)
         #array = np.array(array, dtype=dtype, order=order, copy=copy)
 
         if ensure_2d:
