@@ -609,15 +609,15 @@ class RadiusNeighborsMixin(object):
             try:
                 #print("Neighbours list generation initialised ...")
                 #neigh_ind_list = [np.where(d <= radius)[0] for d in dist]
-                #for improved feedback
-                neigh_ind_list = np.empty(n_samples,dtype='object')
+                #not creating neigh_ind_list -- directly computing neigh_ind
+                neigh_ind = np.empty(n_samples,dtype='object')
                 print("created object neigh_ind_list ...")
 
                 gc.collect()
                 
                 for ind,d in enumerate(dist):
                     print(ind)
-                    neigh_ind_list[ind] = np.where(d <= radius)[0]
+                    neigh_ind[ind] = np.where(d <= radius)[0]
                 print("Neighbours list successfully generated ...")
                     
             except Exception:
@@ -625,11 +625,8 @@ class RadiusNeighborsMixin(object):
 
             # See https://github.com/numpy/numpy/issues/5456
             # if you want to understand why this is initialized this way.
-            neigh_ind = np.empty(n_samples, dtype='object')
-            neigh_ind[:] = neigh_ind_list
-
-            #why preserve neigh_ind_list -- sklearn_large
-            del neigh_ind_list
+            # neigh_ind = np.empty(n_samples, dtype='object')
+            # neigh_ind[:] = neigh_ind_list
 
             if return_distance:
                 dist_array = np.empty(n_samples, dtype='object')
