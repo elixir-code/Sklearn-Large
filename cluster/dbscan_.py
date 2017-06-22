@@ -19,9 +19,10 @@ from ..neighbors import NearestNeighbors
 
 from ._dbscan_inner import dbscan_inner
 
+import h5py
 
 def dbscan(X, eps=0.5, min_samples=5, metric='minkowski',
-           algorithm='auto', leaf_size=30, p=2, sample_weight=None, n_jobs=1):
+           algorithm='auto', leaf_size=30, p=2, sample_weight=None, n_jobs=1,hdf5_file=None):
     """Perform DBSCAN clustering from vector array or distance matrix.
 
     Read more in the :ref:`User Guide <dbscan>`.
@@ -131,33 +132,89 @@ def dbscan(X, eps=0.5, min_samples=5, metric='minkowski',
         masked_indptr = masked_indptr[:-1] + np.arange(1, X.shape[0])
         # split into rows
         neighborhoods[:] = np.split(masked_indices, masked_indptr)
+    
     else:
-        #Optimisation neccessary -- sklearn_large
-        neighbors_model = NearestNeighbors(radius=eps, algorithm=algorithm,
-                                           leaf_size=leaf_size,
-                                           metric=metric, p=p,
-                                           n_jobs=n_jobs)
-        neighbors_model.fit(X)
-        print("Neighbors model fitted successfully ...")
-        # This has worst case O(n^2) memory complexity -- O (n.d) complexity for radius_neighbors query
-        neighborhoods = neighbors_model.radius_neighbors(X, eps,
-                                                         return_distance=False)
 
-    if sample_weight is None:
-        n_neighbors = np.array([len(neighbors)
-                                for neighbors in neighborhoods])
+        if hdf5_file is None:
+            #For small datasets -- sklearn_large
+            neighbors_model = NearestNeighbors(radius=eps, algorithm=algorithm,
+                                               leaf_size=leaf_size,
+                                               metric=metric, p=p,
+                                               n_jobs=n_jobs)
+            neighbors_model.fit(X)
+            print("Neighbors model fitted successfully ...")
+            # This has worst case O(n^2) memory complexity -- O (n.d) complexity for radius_neighbors query
+            neighborhoods = neighbors_model.radius_neighbors(X, eps,return_distance=False)
+
+        else:
+
+            print("\nEnter 'r' to read neighborhoods"
+                  "\nEnter 'w' to write neighborhoods"
+                  "\nMode : ",end='')
+
+            mode = input().strip()
+
+            if mode == 'r':
+                neighborhoods = hdf5_file['neighborhoods']
+
+                if 'radius' in hdf5_file:
+                    print("radius = ",hdf5_file['radius'][()])
+
+            elif mode =='w':
+                #Optimisation neccessary -- sklearn_large
+                neighbors_model = NearestNeighbors(radius=eps, algorithm=algorithm,
+                                                   leaf_size=leaf_size,
+                                                   metric=metric, p=p,
+                                                   n_jobs=n_jobs)
+                neighbors_model.fit(X)
+                print("Neighbors model fitted successfully ...")
+                # This has worst case O(n^2) memory complexity -- O (n.d) complexity for radius_neighbors query
+                neighborhoods = neighbors_model.radius_neighbors(X, eps,return_distance=False,hdf5_file=hdf5_file)      
+
+    print("\ngenerating n_neighbours for each sample ...")
+    
+    if hdf5_file is None:
+        if sample_weight is None:
+            n_neighbors = np.array([len(neighbors)
+                                    for neighbors in neighborhoods])
+        else:
+            n_neighbors = np.array([np.sum(sample_weight[neighbors])
+                                    for neighbors in neighborhoods])
+
     else:
-        n_neighbors = np.array([np.sum(sample_weight[neighbors])
-                                for neighbors in neighborhoods])
+        print("\nEnter 'r' to read n_neighbors"
+              "\nEnter 'w' to write n_neighbors"
+              "\nMode : ",end='')
+        mode = input().strip()
 
+        if mode == 'r':
+            n_neighbors = hdf5_file['n_neighbors']
+
+        elif mode == 'w':
+            if 'n_neighbors' in hdf5_file:
+                del hdf5_file['n_neighbors']
+
+            if sample_weight is None:
+                hdf5_file['n_neighbors'] = np.array([len(neighbors)
+                                        for neighbors in neighborhoods],dtype=np.dtype('intp'))
+            else:
+                hdf5_file['n_neighbors'] = np.array([np.sum(sample_weight[neighbors])
+                                        for neighbors in neighborhoods],dtype=np.dtype('intp'))
+
+            n_neighbors = hdf5_file['n_neighbors']
+
+    print("generating initial labels for each sample ...")
     # Initially, all samples are noise.
     labels = -np.ones(X.shape[0], dtype=np.intp)
 
+    print("evaluating is core for each sample ...")
     # A list of all core samples found.
-    core_samples = np.asarray(n_neighbors >= min_samples, dtype=np.uint8)
+    core_samples = np.asarray([n_neighbor >= min_samples for n_neighbor in n_neighbors], dtype=np.uint8)
+    #core_samples = np.asarray([n_neighbor >= min_samples for n_neighbor in n_neighbors], dtype=np.uint8)
 
     print("Initialising dbscan CPython code ...")
-    #sklearn_large -- No control over dbscan inner (less chance of memory error)
+    
+    #input: label by reference -- i.e., contents of labels is modified
     dbscan_inner(core_samples, neighborhoods, labels)
     print("DBSCAN inner successful ...")
 
@@ -257,7 +314,7 @@ class DBSCAN(BaseEstimator, ClusterMixin):
         self.p = p
         self.n_jobs = n_jobs
 
-    def fit(self, X, y=None, sample_weight=None):
+    def fit(self, X, y=None, sample_weight=None,hdf5_file=None):
         """Perform DBSCAN clustering from features or distance matrix.
 
         Parameters
@@ -277,7 +334,7 @@ class DBSCAN(BaseEstimator, ClusterMixin):
         print("Input Array validated ...")
 
         clust = dbscan(X, sample_weight=sample_weight,
-                       **self.get_params())
+                       **self.get_params(),hdf5_file=hdf5_file)
         self.core_sample_indices_, self.labels_ = clust
 
         '''

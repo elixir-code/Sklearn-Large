@@ -1,3 +1,4 @@
+
 """Base and mixin classes for nearest neighbors"""
 # Authors: Jake Vanderplas <vanderplas@astro.washington.edu>
 #          Fabian Pedregosa <fabian.pedregosa@inria.fr>
@@ -11,6 +12,8 @@ from abc import ABCMeta, abstractmethod
 
 import numpy as np
 from scipy.sparse import csr_matrix, issparse
+
+import h5py
 
 from .ball_tree import BallTree
 from .kd_tree import KDTree
@@ -26,8 +29,6 @@ from ..exceptions import NotFittedError
 from ..exceptions import DataConversionWarning
 
 #trying optimisations for sklearn_large
-import gc
-gc.set_threshold(100)
 
 VALID_METRICS = dict(ball_tree=BallTree.valid_metrics,
                      kd_tree=KDTree.valid_metrics,
@@ -504,7 +505,7 @@ class KNeighborsMixin(object):
 class RadiusNeighborsMixin(object):
     """Mixin for radius-based neighbors searches"""
 
-    def radius_neighbors(self, X=None, radius=None, return_distance=True):
+    def radius_neighbors(self, X=None, radius=None, return_distance=True,hdf5_file=None):
         """Finds the neighbors within a given radius of a point or points.
 
         Return the indices and distances of each point from the dataset
@@ -606,22 +607,31 @@ class RadiusNeighborsMixin(object):
 
             
 
-            try:
-                #print("Neighbours list generation initialised ...")
-                #neigh_ind_list = [np.where(d <= radius)[0] for d in dist]
-                #not creating neigh_ind_list -- directly computing neigh_ind
-                neigh_ind = np.empty(n_samples,dtype='object')
-                print("created object neigh_ind_list ...")
+            print("Neighbours list generation initialised ...")
+            
+            if hdf5_file is None:
+                neigh_ind_list = [np.where(d <= radius)[0] for d in dist]
 
-                gc.collect()
+                neigh_ind = np.empty(n_samples,dtype='object')
+                neigh_ind[:] = neigh_ind_list
+
+            else:
                 
+                if 'neighborhoods' in hdf5_file:
+                    del hdf5_file['neighborhoods']
+                
+                dt = h5py.special_dtype(vlen=np.dtype('intp'))
+                neigh_ind = hdf5_file.create_dataset('neighborhoods', (n_samples,), dtype=dt)
+
                 for ind,d in enumerate(dist):
                     print(ind)
                     neigh_ind[ind] = np.where(d <= radius)[0]
-                print("Neighbours list successfully generated ...")
+                
+                if 'radius' in hdf5_file:
+                    del hdf5_file['radius']
                     
-            except Exception:
-                print("Potential Memory Hazard turned Disaster. Please refer to radius_neighbors module ...")
+                hdf5_file['radius'] = radius
+                print("Neighbours list successfully generated ...")
 
             # See https://github.com/numpy/numpy/issues/5456
             # if you want to understand why this is initialized this way.
