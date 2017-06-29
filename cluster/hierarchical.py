@@ -84,13 +84,13 @@ def _fix_connectivity(X, connectivity, n_components=None,
 ###############################################################################
 # Hierarchical tree building functions
 
-def ward_tree(X, connectivity=None, n_clusters=None, return_distance=False):
+def ward_tree(X, connectivity=None, n_clusters=None, return_distance=False, hdf5_file=None):
     """Ward clustering based on a Feature matrix.
 
     Recursively merges the pair of clusters that minimally increases
     within-cluster variance.
 
-    The inertia matrix uses a Heapq-based representation.
+    The inertia matrix uses a 'Heapq-based' representation.
 
     This is the structured version, that takes into account some topological
     structure between samples.
@@ -130,10 +130,10 @@ def ward_tree(X, connectivity=None, n_clusters=None, return_distance=False):
         are merged to form node `n_samples + i`
 
     n_components : int
-        The number of connected components in the graph.
+        The number of connected components in the (connectivity) graph.
 
     n_leaves : int
-        The number of leaves in the tree
+        The number of leaves in the tree (default: number of samples)
 
     parents : 1D array, shape (n_nodes, ) or None
         The parent of each node. Only returned when a connectivity matrix
@@ -143,7 +143,7 @@ def ward_tree(X, connectivity=None, n_clusters=None, return_distance=False):
         Only returned if return_distance is set to True (for compatibility).
         The distances between the centers of the nodes. `distances[i]`
         corresponds to a weighted euclidean distance between
-        the nodes `children[i, 1]` and `children[i, 2]`. If the nodes refer to
+        the nodes `children[i, 0]` and `children[i, 1]`. If the nodes refer to
         leaves of the tree, then `distances[i]` is their unweighted euclidean
         distance. Distances are updated in the following way
         (from scipy.hierarchy.linkage):
@@ -167,6 +167,7 @@ def ward_tree(X, connectivity=None, n_clusters=None, return_distance=False):
     """
     X = np.asarray(X)
     if X.ndim == 1:
+    	#cast data to a 2-D array with 1 feature
         X = np.reshape(X, (-1, 1))
     n_samples, n_features = X.shape
 
@@ -181,7 +182,11 @@ def ward_tree(X, connectivity=None, n_clusters=None, return_distance=False):
                           'retain the lower branches required '
                           'for the specified number of clusters',
                           stacklevel=2)
-        out = hierarchy.ward(X)
+
+        out = hierarchy.ward(X, hdf5_file=hdf5_file)
+        print("Finsihed executing Cython code")
+
+        
         children_ = out[:, :2].astype(np.intp)
 
         if return_distance:
@@ -618,7 +623,8 @@ class AgglomerativeClustering(BaseEstimator, ClusterMixin):
         Stop early the construction of the tree at n_clusters. This is
         useful to decrease computation time if the number of clusters is
         not small compared to the number of samples. This option is
-        useful only when specifying a connectivity matrix. Note also that
+        useful only when specifying a connectivity matrix (Works only 
+        connectivity is not None). Note also that
         when varying the number of clusters and using caching, it may
         be advantageous to compute the full tree.
 
@@ -633,21 +639,27 @@ class AgglomerativeClustering(BaseEstimator, ClusterMixin):
         - complete or maximum linkage uses the maximum distances between
           all observations of the two sets.
 
-    pooling_func : callable, default=np.mean
+    pooling_func : callable, default=np.mean (why axis=1)
         This combines the values of agglomerated features into a single
         value, and should accept an array of shape [M, N] and the keyword
         argument ``axis=1``, and reduce it to an array of size [M].
+		
+		example -- 
+		>>> x=np.array([[1,2,3],[4,5,9]])
+		>>> np.mean(x,axis=1)
+
+		array([ 2.,  6.])
 
     Attributes
     ----------
     labels_ : array [n_samples]
         cluster labels for each point
 
-    n_leaves_ : int
+    n_leaves_ : int (always equal n_samples)
         Number of leaves in the hierarchical tree.
 
     n_components_ : int
-        The estimated number of connected components in the graph.
+        The estimated number of connected components in the (Connectivity) graph.
 
     children_ : array-like, shape (n_nodes-1, 2)
         The children of each non-leaf node. Values less than `n_samples`
@@ -664,14 +676,16 @@ class AgglomerativeClustering(BaseEstimator, ClusterMixin):
                  connectivity=None, compute_full_tree='auto',
                  linkage='ward', pooling_func=np.mean):
         self.n_clusters = n_clusters
+        #'cachedir=None' : No caching (transparent object) --sklearn_large
         self.memory = memory
+        #connectivity=None : Clustering is unstructured  --sklearn_large
         self.connectivity = connectivity
-        self.compute_full_tree = compute_full_tree
+        self.compute_full_tree = compute_full_tree # default : auto
         self.linkage = linkage
         self.affinity = affinity
         self.pooling_func = pooling_func
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, hdf5_file=None):
         """Fit the hierarchical clustering on the data
 
         Parameters
@@ -684,7 +698,10 @@ class AgglomerativeClustering(BaseEstimator, ClusterMixin):
         self
         """
         X = check_array(X, ensure_min_samples=2, estimator=self)
+        print("Validated input array ...")
+
         memory = self.memory
+        #No caching
         if isinstance(memory, six.string_types):
             memory = Memory(cachedir=memory, verbose=0)
 
@@ -701,24 +718,30 @@ class AgglomerativeClustering(BaseEstimator, ClusterMixin):
             raise ValueError("Unknown linkage type %s."
                              "Valid options are %s" % (self.linkage,
                                                        _TREE_BUILDERS.keys()))
+        #tree builders : Appropriate function of linkage method
         tree_builder = _TREE_BUILDERS[self.linkage]
 
+        #sklearn-large -- connectivity is None
         connectivity = self.connectivity
         if self.connectivity is not None:
-            if callable(self.connectivity):
+            if callable(self.connectivity): #like k-nearest neighbors graph
                 connectivity = self.connectivity(X)
             connectivity = check_array(
                 connectivity, accept_sparse=['csr', 'coo', 'lil'])
 
         n_samples = len(X)
-        compute_full_tree = self.compute_full_tree
+        compute_full_tree = self.compute_full_tree # default : 'auto'
+        
+        #Why compute full tree ? -- sklearn-large (compute_full_tree = False)
         if self.connectivity is None:
             compute_full_tree = True
+
         if compute_full_tree == 'auto':
             # Early stopping is likely to give a speed up only for
             # a large number of clusters. The actual threshold
             # implemented here is heuristic
             compute_full_tree = self.n_clusters < max(100, .02 * n_samples)
+
         n_clusters = self.n_clusters
         if compute_full_tree:
             n_clusters = None
@@ -728,10 +751,11 @@ class AgglomerativeClustering(BaseEstimator, ClusterMixin):
         if self.linkage != 'ward':
             kwargs['linkage'] = self.linkage
             kwargs['affinity'] = self.affinity
+
         self.children_, self.n_components_, self.n_leaves_, parents = \
             memory.cache(tree_builder)(X, connectivity,
                                        n_clusters=n_clusters,
-                                       **kwargs)
+                                       **kwargs,hdf5_file=hdf5_file)
         # Cut the tree
         if compute_full_tree:
             self.labels_ = _hc_cut(self.n_clusters, self.children_,

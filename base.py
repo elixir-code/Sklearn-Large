@@ -203,6 +203,7 @@ class BaseEstimator(object):
         # introspect the constructor arguments to find the model parameters
         # to represent
         init_signature = signature(init)
+        
         # Consider the constructor parameters excluding 'self'
         parameters = [p for p in init_signature.parameters.values()
                       if p.name != 'self' and p.kind != p.VAR_KEYWORD]
