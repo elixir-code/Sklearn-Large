@@ -18,6 +18,43 @@ from ..neighbors import kneighbors_graph
 from ..manifold import spectral_embedding
 from .k_means_ import k_means
 
+#Visualisation Code - start --
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.patches as mpatches
+
+def visualise_2D(x_values,y_values,labels=None,class_names=None):
+    """Visualise clusters of selected 2 features"""
+
+    sns.set_style('white')
+    sns.set_context('poster')
+    sns.set_color_codes()
+
+    plot_kwds = {'alpha' : 0.5, 's' : 30, 'linewidths':0}
+
+    frame = plt.gca()
+    frame.axes.get_xaxis().set_visible(False)
+    frame.axes.get_yaxis().set_visible(False)
+
+    if labels is None:
+        plt.scatter(x_values,y_values,c='b',**plot_kwds)
+
+    else:
+        pallete=sns.color_palette('dark',np.unique(labels).max()+1)
+        colors=[pallete[x] if x>=0 else (0.0,0.0,0.0) for x in labels]
+        plt.scatter(x_values,y_values,c=colors,**plot_kwds)
+        legend_entries = [mpatches.Circle((0,0),1,color=x,alpha=0.5) for x in pallete]
+
+        if class_names is None:
+            legend_labels = range(len(pallete))
+
+        else:
+            legend_labels = ["class "+str(label)+" ( "+str(name)+" )" for label,name in enumerate(class_names)]
+
+        plt.legend(legend_entries,legend_labels,loc='best')
+        
+    plt.show()
+#Visualisation Code - end --
 
 def discretize(vectors, copy=True, max_svd_restarts=30, n_iter_max=20,
                random_state=None):
@@ -158,7 +195,7 @@ def discretize(vectors, copy=True, max_svd_restarts=30, n_iter_max=20,
 
 def spectral_clustering(affinity, n_clusters=8, n_components=None,
                         eigen_solver=None, random_state=None, n_init=10,
-                        eigen_tol=0.0, assign_labels='kmeans'):
+                        eigen_tol=0.0, assign_labels='kmeans',y=None):
     """Apply clustering to a projection to the normalized laplacian.
 
     In practice Spectral Clustering is very useful when the structure of
@@ -252,10 +289,15 @@ def spectral_clustering(affinity, n_clusters=8, n_components=None,
 
     random_state = check_random_state(random_state)
     n_components = n_clusters if n_components is None else n_components
+
+    print("Performing Spectral Embedding ...")
     maps = spectral_embedding(affinity, n_components=n_components,
                               eigen_solver=eigen_solver,
                               random_state=random_state,
                               eigen_tol=eigen_tol, drop_first=False)
+    
+    if n_components == 2:
+        visualise_2D(maps.T[0],maps.T[1],y)
 
     if assign_labels == 'kmeans':
         _, labels, _ = k_means(maps, n_clusters, random_state=random_state,
@@ -299,7 +341,8 @@ class SpectralClustering(BaseEstimator, ClusterMixin):
     affinity : string, array-like or callable, default 'rbf'
         If a string, this may be one of 'nearest_neighbors', 'precomputed',
         'rbf' or one of the kernels supported by
-        `sklearn.metrics.pairwise_kernels`.
+        `sklearn.metrics.pairwise_kernels`
+        ['rbf', 'sigmoid', 'polynomial', 'poly', 'linear', 'cosine'].
 
         Only kernels that produce similarity scores (non-negative values that
         increase with similarity) should be used. This property is not checked
@@ -429,6 +472,9 @@ class SpectralClustering(BaseEstimator, ClusterMixin):
         """
         X = check_array(X, accept_sparse=['csr', 'csc', 'coo'],
                         dtype=np.float64)
+        print("Input array validated ...")
+
+        #if square matrix
         if X.shape[0] == X.shape[1] and self.affinity != "precomputed":
             warnings.warn("The spectral clustering API has changed. ``fit``"
                           "now constructs an affinity matrix from data. To use"
@@ -436,11 +482,14 @@ class SpectralClustering(BaseEstimator, ClusterMixin):
                           "set ``affinity=precomputed``.")
 
         if self.affinity == 'nearest_neighbors':
+            print("Computing affinity matrix ...")
             connectivity = kneighbors_graph(X, n_neighbors=self.n_neighbors, include_self=True,
-                                            n_jobs=self.n_jobs)
+                                            n_jobs=self.n_jobs)            
             self.affinity_matrix_ = 0.5 * (connectivity + connectivity.T)
+
         elif self.affinity == 'precomputed':
             self.affinity_matrix_ = X
+        
         else:
             params = self.kernel_params
             if params is None:
@@ -449,18 +498,22 @@ class SpectralClustering(BaseEstimator, ClusterMixin):
                 params['gamma'] = self.gamma
                 params['degree'] = self.degree
                 params['coef0'] = self.coef0
+
             self.affinity_matrix_ = pairwise_kernels(X, metric=self.affinity,
                                                      filter_params=True,
                                                      **params)
 
+        #print("Computed AFFINITY MATRIX ...")
         random_state = check_random_state(self.random_state)
+
         self.labels_ = spectral_clustering(self.affinity_matrix_,
                                            n_clusters=self.n_clusters,
                                            eigen_solver=self.eigen_solver,
                                            random_state=random_state,
                                            n_init=self.n_init,
                                            eigen_tol=self.eigen_tol,
-                                           assign_labels=self.assign_labels)
+                                           assign_labels=self.assign_labels,
+                                           y=y)
         return self
 
     @property

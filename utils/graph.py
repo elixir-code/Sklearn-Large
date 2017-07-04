@@ -167,6 +167,7 @@ def _laplacian_dense(graph, normed=False, return_diag=False):
 
     # set diagonal to zero
     lap.flat[::n_nodes + 1] = 0
+    #symmetric matrix
     w = -lap.sum(axis=0)
     if normed:
         w = np.sqrt(w)

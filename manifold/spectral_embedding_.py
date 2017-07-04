@@ -135,7 +135,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
                        norm_laplacian=True, drop_first=True):
     """Project the sample on the first eigenvectors of the graph Laplacian.
 
-    The adjacency matrix is used to compute a normalized graph Laplacian
+    The adjacency matrix is used to compute a 'normalized graph Laplacian' (N-cuts)
     whose spectrum (especially the eigenvectors associated to the
     smallest eigenvalues) has an interpretation in terms of minimal
     number of cuts necessary to split the graph into comparably sized
@@ -167,7 +167,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
     random_state : int seed, RandomState instance, or None (default)
         A pseudo random number generator used for the initialization of the
         lobpcg eigenvectors decomposition when eigen_solver == 'amg'.
-        By default, arpack is used.
+        By default, 'arpack' is used.
 
     eigen_tol : float, optional, default=0.0
         Stopping criterion for eigendecomposition of the Laplacian matrix
@@ -203,6 +203,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
       http://dx.doi.org/10.1137%2FS1064827500366124
     """
     adjacency = check_symmetric(adjacency)
+    print("Adjacency matrix checked for symetricity ...")
 
     try:
         from pyamg import smoothed_aggregation_solver
@@ -211,6 +212,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
             raise ValueError("The eigen_solver was set to 'amg', but pyamg is "
                              "not available.")
 
+    #Default eigen_solver : 'arpack'
     if eigen_solver is None:
         eigen_solver = 'arpack'
     elif eigen_solver not in ('arpack', 'lobpcg', 'amg'):
@@ -229,8 +231,10 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
         warnings.warn("Graph is not fully connected, spectral embedding"
                       " may not work as expected.")
 
+    print("Computing graph laplacian ...")
     laplacian, dd = graph_laplacian(adjacency,
                                     normed=norm_laplacian, return_diag=True)
+
     if (eigen_solver == 'arpack' or eigen_solver != 'lobpcg' and
        (not sparse.isspmatrix(laplacian) or n_nodes < 5 * n_components)):
         # lobpcg used with eigen_solver='amg' has bugs for low number of nodes
@@ -239,6 +243,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
         # /lobpcg/lobpcg.py#L237
         # or matlab:
         # http://www.mathworks.com/matlabcentral/fileexchange/48-lobpcg-m
+        print("Starting set Diagonal ...")
         laplacian = _set_diag(laplacian, 1, norm_laplacian)
 
         # Here we'll use shift-invert mode for fast eigenvalues
@@ -260,9 +265,11 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
             # to spare a memory allocation of a possibly very large array
             laplacian *= -1
             v0 = random_state.uniform(-1, 1, laplacian.shape[0])
+            print("Starting eigsh ...")
             lambdas, diffusion_map = eigsh(laplacian, k=n_components,
                                            sigma=1.0, which='LM',
                                            tol=eigen_tol, v0=v0)
+            print("Finished eigsh ...")
             embedding = diffusion_map.T[n_components::-1] * dd
         except RuntimeError:
             # When submatrices are exactly singular, an LU decomposition
@@ -280,10 +287,13 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
         laplacian = check_array(laplacian, dtype=np.float64,
                                 accept_sparse=True)
         laplacian = _set_diag(laplacian, 1, norm_laplacian)
+
         ml = smoothed_aggregation_solver(check_array(laplacian, 'csr'))
+
         M = ml.aspreconditioner()
         X = random_state.rand(laplacian.shape[0], n_components + 1)
         X[:, 0] = dd.ravel()
+
         lambdas, diffusion_map = lobpcg(laplacian, X, M=M, tol=1.e-12,
                                         largest=False)
         embedding = diffusion_map.T * dd
@@ -315,6 +325,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
                 raise ValueError
 
     embedding = _deterministic_vector_sign_flip(embedding)
+
     if drop_first:
         return embedding[1:n_components].T
     else:
