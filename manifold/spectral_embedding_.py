@@ -244,6 +244,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
         # or matlab:
         # http://www.mathworks.com/matlabcentral/fileexchange/48-lobpcg-m
         print("Starting set Diagonal ...")
+        #by default diagonal  elements are 1 --sklearn_large
         laplacian = _set_diag(laplacian, 1, norm_laplacian)
 
         # Here we'll use shift-invert mode for fast eigenvalues
@@ -269,6 +270,9 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
             lambdas, diffusion_map = eigsh(laplacian, k=n_components,
                                            sigma=1.0, which='LM',
                                            tol=eigen_tol, v0=v0)
+            print(lambdas)
+            print(diffusion_map)
+
             print("Finished eigsh ...")
             embedding = diffusion_map.T[n_components::-1] * dd
         except RuntimeError:
@@ -324,6 +328,7 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
             if embedding.shape[0] == 1:
                 raise ValueError
 
+    #kind of optional step
     embedding = _deterministic_vector_sign_flip(embedding)
 
     if drop_first:

@@ -22,6 +22,7 @@ from .k_means_ import k_means
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.patches as mpatches
+from mpl_toolkits.mplot3d import Axes3D
 
 def visualise_2D(x_values,y_values,labels=None,class_names=None):
     """Visualise clusters of selected 2 features"""
@@ -54,6 +55,24 @@ def visualise_2D(x_values,y_values,labels=None,class_names=None):
         plt.legend(legend_entries,legend_labels,loc='best')
         
     plt.show()
+
+def visualise_3D(x_values,y_values,z_values,labels=None):
+    """Visualise clusters of selected 3 features -- plotly"""
+    fig = plt.figure()
+    ax = fig.add_subplot(111,projection='3d')
+
+    plot_kwds = {'alpha' : 0.5, 's' : 80, 'linewidths':0}
+
+    if labels is None:
+        ax.scatter(x_values,y_values,z_values,c='b',**plot_kwds)
+
+    else:
+        pallete=sns.color_palette('dark',np.unique(labels).max()+1)
+        colors=[pallete[x] if x>=0 else (0.0,0.0,0.0) for x in labels]
+        ax.scatter(x_values,y_values,z_values,c=colors,**plot_kwds)
+
+    plt.show()
+
 #Visualisation Code - end --
 
 def discretize(vectors, copy=True, max_svd_restarts=30, n_iter_max=20,
@@ -298,6 +317,9 @@ def spectral_clustering(affinity, n_clusters=8, n_components=None,
     
     if n_components == 2:
         visualise_2D(maps.T[0],maps.T[1],y)
+
+    if n_components == 3:
+        visualise_3D(maps.T[0],maps.T[1],maps.T[2],y)
 
     if assign_labels == 'kmeans':
         _, labels, _ = k_means(maps, n_clusters, random_state=random_state,

@@ -839,8 +839,10 @@ def _deterministic_vector_sign_flip(u):
         Array with the sign flipped vectors as its rows.
     """
     max_abs_rows = np.argmax(np.abs(u), axis=1)
+
     signs = np.sign(u[range(u.shape[0]), max_abs_rows])
     u *= signs[:, np.newaxis]
+
     return u
 
 
